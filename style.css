@@ -1,0 +1,26 @@
+/* START FILE: page-get-style.css */
+
+#svg-get {
+  width: 100%;  
+  max-width: 1600px;
+  min-width: 800px;
+}
+
+
+#svg-get .font-text{
+    font-family: 'Libre Baskerville', serif; /* 'Merriweather' */
+    /* font-family: 'Montserrat', 'Roboto', sans-serif; /* 'Lato' */
+    fill: rgb(78, 78, 78);
+}
+
+#svg-get .font-number {
+    /* font-family: 'Lato', 'Roboto', sans-serif; /* Change to 'Lato' if preferred */
+    font-family: 'Source Code Pro', monospace; /* 'Source Code Pro' 'Space Mono' */
+}
+
+#svg-get #titles {
+    font-weight: 400;
+    fill: rgb(78, 78, 78);
+}
+
+/* END FILE: page-get-style.css */

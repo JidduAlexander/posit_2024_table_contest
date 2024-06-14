@@ -1,0 +1,1494 @@
+---
+title: "Prepare data"
+output: html_notebook
+---
+
+```{r}
+library(tidyverse)
+library(readxl)
+```
+
+```{r}
+write_json_data <- function(data, name, compact = TRUE) {
+  if (compact) {
+    dataJSON <- jsonlite::toJSON(data, pretty = FALSE, auto_unbox = TRUE)  # Set pretty to FALSE
+    
+    # Create a single line for the main array
+    dataJSON <- gsub("\\[\\s*", "[", dataJSON)  # Remove spaces after '['
+    dataJSON <- gsub("\\s*\\],", "],", dataJSON)  # Remove spaces before ']'
+  } else {
+    dataJSON <- jsonlite::toJSON(data, pretty = TRUE, auto_unbox = TRUE)
+  }
+  
+  write(paste0("const ", name, " = ", dataJSON, ";"), 
+        file = paste0(name, ".js"))
+}
+
+# Range is on SVG
+# Domain is data domain
+scale_linear <- function(range, domain, round = NULL) {
+  range_diff  <- diff(range)
+  domain_diff <- diff(domain)
+  
+  if (!is.null(round)) {
+    function(val) {
+      # Scale the value from the domain to the range
+      scaled_val <- ((val - domain[1]) / domain_diff) * range_diff + range[1]
+      scaled_val <- round(scaled_val, round)
+      return(scaled_val)
+    }
+  } else {
+    function(val) {
+      # Scale the value from the domain to the range
+      scaled_val <- ((val - domain[1]) / domain_diff) * range_diff + range[1]
+      return(scaled_val)
+    }
+  }
+}
+# scale_linear_y2 <- scale_linear(range = c(90, 10), domain = c(1978, 2022), round = round_for_scale)
+# scale_linear_x1 <- scale_linear(range = c(0, 100), domain = c(0, 1))
+```
+
+```{r}
+ghg <- readRDS("input/ghg.Rds") %>% 
+  select(-co2_fos)
+```
+
+```{r}
+ghg
+n_rows <- n_distinct(ghg$region)
+```
+
+Logic:
+- row information
+- row order
+- column hiding
+- column position
+
+Row:
+
+- historic contribution: area (line) with point for every 5 years
+ + Total: Value, and percent of global Total
+ + CO2: Value and percent of Total national (percent of global CO2, nah!)
+  - Land-use, Coal, Oil, Gas, Other: same same
+ + CH4: Value and percent of global CH4 and percent of Total national
+  - crop_production, fuel_combustion, fugitive_emissions, livestock, waste, other
+ + N2O: Value and percent of global N2O and percent of Total national
+  - agriculture, energy, industry, waste, other
+- latest emissions: value and percentage of global
+ + line with dot at latest
+ + last year emissions and percentage of global
+  - CO2: Value and percent of Total national (percent of global CO2, nah!)
+   + Land-use, Coal, Oil, Gas, Other: same same
+  - CH4: Value and percent of global CH4 and percent of Total national
+   + crop_production, fuel_combustion, fugitive_emissions, livestock, waste, other
+  - N2O: Value and percent of global N2O and percent of Total national
+   + agriculture, energy, industry, waste, other
+- per capita emissions (latest value): value and percentage of max
+ + line with dot at latest
+ + last year emissions and percentage of global
+  - CO2: Value and percent of Total national (percent of global CO2, nah!)
+   + Land-use, Coal, Oil, Gas, Other: same same
+  - CH4: Value and percent of global CH4 and percent of Total national
+   + crop_production, fuel_combustion, fugitive_emissions, livestock, waste, other
+  - N2O: Value and percent of global N2O and percent of Total national
+   + agriculture, energy, industry, waste, other
+- ?recent trend?
+
+Name
+Y-adjust
+historic contribution:
+  show: TRUE
+  data: 
+    x:
+    y:
+
+# Scales
+
+```{r}
+n_rows * 5
+scale_linear_y_offset <- scale_linear(range = c(10, 945), domain = c(0, 1), round = 2)
+
+# TITLES
+x_titles <- 3
+y_titles <- 3
+
+# ROW
+row_y0 <- 4.5
+row_y1 <- 0.5
+
+# HISTORIC CONTRIBUTION
+hcTotalX0 <- 24
+hcTotalX1 <- 46
+hcTotalY  <- 3
+
+hcSlideInX <- -14
+hcSlideOutLeftX <- -1.2 * hcTotalX1
+
+hcCGroupShift <- 6
+hcMGroupShift <- 6
+hcNGroupShift <- 6
+
+hcCGroupTotalX0Shift <- 0.8
+hcMGroupTotalX0Shift <- 0.8
+hcNGroupTotalX0Shift <- 0.8
+
+x_hc_totalperc <- 35
+y_hc_totalperc <- 3
+
+# LATEST EMISSIONS
+leTotalX0 <- 50
+leTotalX1 <- 71
+leTotalY  <- 3
+
+leSlideInX      <- -14 - leTotalX0 + hcTotalX0
+leSlideOutLeftX <- -1.2 * leTotalX1
+
+# PER CAPITA EMISSIONS
+pcTotalX0 <- 77
+pcTotalX1 <- 98
+pcTotalY  <- 3
+
+round_for_scale <- 1
+# HISTORIC CONTRIBUTION SCALE FUNCTIONS
+scale_linear_x_hc_area <- scale_linear(range = c(7, hcTotalX1 + 1), domain = c(0, 1), round = round_for_scale)
+scale_linear_y_hc_area <- scale_linear(range = c(row_y0, row_y1), domain = c(0, 1), round = round_for_scale)
+
+scale_linear_x_hc_percent_bar <- scale_linear(range = c(hcTotalX1 + 1, hcTotalX0 - 1), domain = c(0, 1), round = round_for_scale)
+
+# LATEST EMISSIONS SCALE FUNCTIONS
+scale_linear_x_le_line <- scale_linear(range = c(hcTotalX1 + 1.5, leTotalX1 + 1), domain = c(0, 1), round = round_for_scale)
+scale_linear_y_le_line <- scale_linear(range = c(row_y0, row_y1), domain = c(0, 1), round = round_for_scale)
+
+scale_linear_x_le_percent_bar <- scale_linear(range = c(leTotalX1 + 1, leTotalX0 - 1), domain = c(0, 1), round = round_for_scale)
+
+# PER CAPITA SCALE FUNCTIONS
+scale_linear_x_pc_line <- scale_linear(range = c(leTotalX1 + 1.5, pcTotalX1 + 1), domain = c(0, 1), round = round_for_scale)
+scale_linear_y_pc_line <- scale_linear(range = c(row_y0, row_y1), domain = c(0, 1), round = round_for_scale)
+
+scale_linear_x_pc_bars <- scale_linear(range = c(pcTotalX0 + (pcTotalX1 - pcTotalX0) / 4, pcTotalX1 + 1), domain = c(0, 1), round = round_for_scale)
+```
+
+```{r}
+
+c_x1   <- hcTotalX1 + 1 + hcSlideInX
+c_x2   <- c_x1 + 22 - 1
+c_c_x1 <- c_x1 - hcCGroupShift + 14.5 * 0
+c_c_x2 <- c_x1 - hcCGroupShift + 14.5 * 1 - 1
+c_o_x1 <- c_x1 - hcCGroupShift + 14.5 * 1
+c_o_x2 <- c_x1 - hcCGroupShift + 14.5 * 2 - 1
+c_g_x1 <- c_x1 - hcCGroupShift + 14.5 * 2
+c_g_x2 <- c_x1 - hcCGroupShift + 14.5 * 3 - 1
+c_t_x1 <- c_x1 - hcCGroupShift + 14.5 * 3
+c_t_x2 <- c_x1 - hcCGroupShift + 14.5 * 4 - 1
+c_l_x1 <- c_x1 - hcCGroupShift + 14.5 * 4
+c_l_x2 <- c_x1 - hcCGroupShift + 14.5 * 5 - 1
+
+m_x1    <- c_x1 + 22
+m_x2    <- m_x1 + 22 - 1
+m_cp_x1 <- c_x1 - hcMGroupShift + 12 * 0
+m_cp_x2 <- c_x1 - hcMGroupShift + 12 * 1 - 1
+m_fc_x1 <- c_x1 - hcMGroupShift + 12 * 1
+m_fc_x2 <- c_x1 - hcMGroupShift + 12 * 2 - 1
+m_fe_x1 <- c_x1 - hcMGroupShift + 12 * 2
+m_fe_x2 <- c_x1 - hcMGroupShift + 12 * 3 - 1
+m_li_x1 <- c_x1 - hcMGroupShift + 12 * 3
+m_li_x2 <- c_x1 - hcMGroupShift + 12 * 4 - 1
+m_wa_x1 <- c_x1 - hcMGroupShift + 12 * 4
+m_wa_x2 <- c_x1 - hcMGroupShift + 12 * 5 - 1
+m_ot_x1 <- c_x1 - hcMGroupShift + 12 * 5
+m_ot_x2 <- c_x1 - hcMGroupShift + 12 * 6 - 1
+
+n_x1   <- m_x1 + 22
+n_x2   <- n_x1 + 22 - 1
+n_a_x1 <- c_x1 - hcNGroupShift + 14.5 * 0
+n_a_x2 <- c_x1 - hcNGroupShift + 14.5 * 1 - 1
+n_e_x1 <- c_x1 - hcNGroupShift + 14.5 * 1
+n_e_x2 <- c_x1 - hcNGroupShift + 14.5 * 2 - 1
+n_i_x1 <- c_x1 - hcNGroupShift + 14.5 * 2
+n_i_x2 <- c_x1 - hcNGroupShift + 14.5 * 3 - 1
+n_w_x1 <- c_x1 - hcNGroupShift + 14.5 * 3
+n_w_x2 <- c_x1 - hcNGroupShift + 14.5 * 4 - 1
+n_o_x1 <- c_x1 - hcNGroupShift + 14.5 * 4
+n_o_x2 <- c_x1 - hcNGroupShift + 14.5 * 5 - 1
+```
+
+```{r}
+dataSettings <- list(
+  headerTitleFontSize  = '1.45px',
+  headerExpandFontSize = '2px',
+  titlesFontSize       = '1.6px',
+  # titlesFontFill       = 'rgb(78,78,78)', # in style.css
+  hcHeaderTitle        = 'Total historic emissions',
+  hcHeaderSymbol0      = '\uf055',
+  hcHeaderSymbol1      = '\uf056',
+  hcHeaderTitleX       = (hcTotalX0 + hcTotalX1) / 2,
+  # hcHeaderTitleX       = hcTotalX0 - 2,
+  hcHeaderExpandX      = hcTotalX1,
+  hcHeaderExpandY      = 7,
+  hcSlideInX           = hcSlideInX,
+  hcSlideOutLeftX      = hcSlideOutLeftX,
+  hcTotalX0            = hcTotalX0,
+  hcTotalX1            = hcTotalX1,
+  hcTotalY             = hcTotalY,
+  hcPercentBarY        = row_y1,
+  hcPercentBarH        = row_y0 - row_y1,
+  hcPercentBarRx       = 0.6,
+  hcPercentBarRy       = 0.6,
+  hcPercentBarFill     = 'rgba(166,206,227, 0.2)',
+  hcPercentTextFill    = 'rgb(31,120,180)',
+  hcPercentTextO1      = 0.6,
+  hcPercentTextFontSize = 1.3,
+  
+  hcCHeaderTitle       = "CO2",
+  hcCHeaderTitleX      = (c_x1 + c_x2) / 2,
+  hcCHeaderExpandX     = c_x2,
+  hcCHeaderExpandY     = 7,
+  hcCHeaderSymbol0     = "+",
+  hcCHeaderSymbol1     = "-",
+  hcCTotalX0           = c_x1 + 2, 
+  hcCTotalY            = hcTotalY,
+  hcCPercentTextX      = c_x2 - 1, 
+  hcCPercentBarFill    = 'rgba(166,206,100, 0.2)',
+  hcCPercentTextFill   = 'rgb(166,206,100)',
+  
+  hcCcHeaderTitle       = "Coal",
+  hcCcHeaderTitleX      = (c_c_x1 + c_c_x2) / 2,
+  hcCcHeaderExpandX     = c_c_x2,
+  hcCcHeaderExpandY     = 7,
+  hcCcHeaderSymbol0     = "+",
+  hcCcHeaderSymbol1     = "-",
+  hcCcTotalX0           = c_c_x1 + hcCGroupTotalX0Shift, 
+  hcCcTotalY            = hcTotalY,
+  hcCcPercentTextX      = c_c_x2 - 1, 
+  hcCcPercentBarFill    = 'rgba(166,118,29, 0.2)',
+  hcCcPercentTextFill   = 'rgb(166,118,29)',
+  
+  hcCoHeaderTitle       = "Oil",
+  hcCoHeaderTitleX      = (c_o_x1 + c_o_x2) / 2,
+  hcCoHeaderExpandX     = c_o_x2,
+  hcCoHeaderExpandY     = 7,
+  hcCoHeaderSymbol0     = "+",
+  hcCoHeaderSymbol1     = "-",
+  hcCoTotalX0           = c_o_x1 + hcCGroupTotalX0Shift, 
+  hcCoTotalY            = hcTotalY,
+  hcCoPercentTextX      = c_o_x2 - 1, 
+  hcCoPercentBarFill    = 'rgba(102,102,102, 0.2)',
+  hcCoPercentTextFill   = 'rgb(102,102,102)',
+
+  hcCgHeaderTitle       = "Gas",
+  hcCgHeaderTitleX      = (c_g_x1 + c_g_x2) / 2,
+  hcCgHeaderExpandX     = c_g_x2,
+  hcCgHeaderExpandY     = 7,
+  hcCgHeaderSymbol0     = "+",
+  hcCgHeaderSymbol1     = "-",
+  hcCgTotalX0           = c_g_x1 + hcCGroupTotalX0Shift, 
+  hcCgTotalY            = hcTotalY,
+  hcCgPercentTextX      = c_g_x2 - 1, 
+  hcCgPercentBarFill    = 'rgba(117,112,179, 0.2)',
+  hcCgPercentTextFill   = 'rgb(117,112,179)',
+  
+  hcClHeaderTitle       = "Land-use",
+  hcClHeaderTitleX      = (c_l_x1 + c_l_x2) / 2,
+  hcClHeaderExpandX     = c_l_x2,
+  hcClHeaderExpandY     = 7,
+  hcClHeaderSymbol0     = "+",
+  hcClHeaderSymbol1     = "-",
+  hcClTotalX0           = c_l_x1 + hcCGroupTotalX0Shift, 
+  hcClTotalY            = hcTotalY,
+  hcClPercentTextX      = c_l_x2 - 1, 
+  hcClPercentBarFill    = 'rgba(27,158,119, 0.2)',
+  hcClPercentTextFill   = 'rgb(27,158,119)',
+  
+  hcCtHeaderTitle       = "Other",
+  hcCtHeaderTitleX      = (c_t_x1 + c_t_x2) / 2,
+  hcCtHeaderExpandX     = c_t_x2,
+  hcCtHeaderExpandY     = 7,
+  hcCtHeaderSymbol0     = "+",
+  hcCtHeaderSymbol1     = "-",
+  hcCtTotalX0           = c_t_x1 + hcCGroupTotalX0Shift, 
+  hcCtTotalY            = hcTotalY,
+  hcCtPercentTextX      = c_t_x2 - 1, 
+  hcCtPercentBarFill    = 'rgba(217,95,2, 0.2)',
+  hcCtPercentTextFill   = 'rgb(217,95,2)',
+  
+  hcMHeaderTitle       = "Methane",
+  hcMHeaderTitleX      = (m_x1 + m_x2) / 2,
+  hcMHeaderExpandX     = m_x2,
+  hcMHeaderExpandY     = 7,
+  hcMHeaderSymbol0     = "+",
+  hcMHeaderSymbol1     = "-",
+  hcMTotalX0           = m_x1 + 2, 
+  hcMTotalY            = hcTotalY, 
+  hcMPercentTextX      = m_x2 - 1, 
+  hcMPercentBarFill    = 'rgba(60,206,227, 0.2)',
+  hcMPercentTextFill   = 'rgb(60,206,227)',
+  
+  hcMcpHeaderTitle       = "Crops",
+  hcMcpHeaderTitleX      = (m_cp_x1 + m_cp_x2) / 2,
+  hcMcpHeaderExpandX     = m_cp_x2,
+  hcMcpHeaderExpandY     = 7,
+  hcMcpHeaderSymbol0     = "+",
+  hcMcpHeaderSymbol1     = "-",
+  hcMcpTotalX0           = m_cp_x1 + hcMGroupTotalX0Shift, 
+  hcMcpTotalY            = hcTotalY, 
+  hcMcpPercentTextX      = m_cp_x2 - 1, 
+  hcMcpPercentBarFill    = 'rgba(102,166,30, 0.2)',
+  hcMcpPercentTextFill   = 'rgb(102,166,30)',
+  
+  hcMfcHeaderTitle       = "Fuel",
+  hcMfcHeaderTitleX      = (m_fc_x1 + m_fc_x2) / 2,
+  hcMfcHeaderExpandX     = m_fc_x2,
+  hcMfcHeaderExpandY     = 7,
+  hcMfcHeaderSymbol0     = "+",
+  hcMfcHeaderSymbol1     = "-",
+  hcMfcTotalX0           = m_fc_x1 + hcMGroupTotalX0Shift, 
+  hcMfcTotalY            = hcTotalY, 
+  hcMfcPercentTextX      = m_fc_x2 - 1, 
+  hcMfcPercentBarFill    = 'rgba(166,118,29, 0.2)',
+  hcMfcPercentTextFill   = 'rgb(166,118,29)',
+  
+  hcMfeHeaderTitle       = "Fugitive",
+  hcMfeHeaderTitleX      = (m_fe_x1 + m_fe_x2) / 2,
+  hcMfeHeaderExpandX     = m_fe_x2,
+  hcMfeHeaderExpandY     = 7,
+  hcMfeHeaderSymbol0     = "+",
+  hcMfeHeaderSymbol1     = "-",
+  hcMfeTotalX0           = m_fe_x1 + hcMGroupTotalX0Shift, 
+  hcMfeTotalY            = hcTotalY, 
+  hcMfePercentTextX      = m_fe_x2 - 1, 
+  hcMfePercentBarFill    = 'rgba(117,112,179, 0.2)',
+  hcMfePercentTextFill   = 'rgb(117,112,179)',
+  
+  hcMliHeaderTitle       = "Livestock",
+  hcMliHeaderTitleX      = (m_li_x1 + m_li_x2) / 2,
+  hcMliHeaderExpandX     = m_li_x2,
+  hcMliHeaderExpandY     = 7,
+  hcMliHeaderSymbol0     = "+",
+  hcMliHeaderSymbol1     = "-",
+  hcMliTotalX0           = m_li_x1 + hcMGroupTotalX0Shift, 
+  hcMliTotalY            = hcTotalY, 
+  hcMliPercentTextX      = m_li_x2 - 1, 
+  hcMliPercentBarFill    = 'rgba(217,95,2, 0.2)',
+  hcMliPercentTextFill   = 'rgb(217,95,2)',
+  
+  hcMwaHeaderTitle       = "Waste",
+  hcMwaHeaderTitleX      = (m_wa_x1 + m_wa_x2) / 2,
+  hcMwaHeaderExpandX     = m_wa_x2,
+  hcMwaHeaderExpandY     = 7,
+  hcMwaHeaderSymbol0     = "+",
+  hcMwaHeaderSymbol1     = "-",
+  hcMwaTotalX0           = m_wa_x1 + hcMGroupTotalX0Shift, 
+  hcMwaTotalY            = hcTotalY, 
+  hcMwaPercentTextX      = m_wa_x2 - 1, 
+  hcMwaPercentBarFill    = 'rgba(27,158,119, 0.2)',
+  hcMwaPercentTextFill   = 'rgb(27,158,119)',
+  
+  hcMotHeaderTitle       = "Other",
+  hcMotHeaderTitleX      = (m_ot_x1 + m_ot_x2) / 2,
+  hcMotHeaderExpandX     = m_ot_x2,
+  hcMotHeaderExpandY     = 7,
+  hcMotHeaderSymbol0     = "+",
+  hcMotHeaderSymbol1     = "-",
+  hcMotTotalX0           = m_ot_x1 + hcMGroupTotalX0Shift, 
+  hcMotTotalY            = hcTotalY, 
+  hcMotPercentTextX      = m_ot_x2 - 1, 
+  hcMotPercentBarFill    = 'rgba(102,102,102, 0.2)',
+  hcMotPercentTextFill   = 'rgb(102,102,102)',
+  
+  hcNHeaderTitle       = "N2O",
+  hcNHeaderTitleX      = (n_x1 + n_x2) / 2,
+  hcNHeaderExpandX     = n_x2,
+  hcNHeaderExpandY     = 7,
+  hcNHeaderSymbol0     = "+",
+  hcNHeaderSymbol1     = "-",
+  hcNTotalX0           = n_x1 + 2, 
+  hcNTotalY            = hcTotalY,
+  hcNPercentTextX      = n_x2 - 1, 
+  hcNPercentBarFill    = 'rgba(166,40,227, 0.2)',
+  hcNPercentTextFill   = 'rgb(166,40,227)',
+  
+  hcNaHeaderTitle       = "Agriculture",
+  hcNaHeaderTitleX      = (n_a_x1 + n_a_x2) / 2,
+  hcNaHeaderExpandX     = n_a_x2,
+  hcNaHeaderExpandY     = 7,
+  hcNaHeaderSymbol0     = "+",
+  hcNaHeaderSymbol1     = "-",
+  hcNaTotalX0           = n_a_x1 + hcNGroupTotalX0Shift, 
+  hcNaTotalY            = hcTotalY,
+  hcNaPercentTextX      = n_a_x2 - 1, 
+  hcNaPercentBarFill    = 'rgba(102,166,30, 0.2)',
+  hcNaPercentTextFill   = 'rgb(102,166,30)',
+  
+  hcNeHeaderTitle       = "Energy",
+  hcNeHeaderTitleX      = (n_e_x1 + n_e_x2) / 2,
+  hcNeHeaderExpandX     = n_e_x2,
+  hcNeHeaderExpandY     = 7,
+  hcNeHeaderSymbol0     = "+",
+  hcNeHeaderSymbol1     = "-",
+  hcNeTotalX0           = n_e_x1 + hcNGroupTotalX0Shift, 
+  hcNeTotalY            = hcTotalY,
+  hcNePercentTextX      = n_e_x2 - 1, 
+  hcNePercentBarFill    = 'rgba(230,171,2, 0.2)',
+  hcNePercentTextFill   = 'rgb(230,171,2)',
+  
+  hcNiHeaderTitle       = "Industry",
+  hcNiHeaderTitleX      = (n_i_x1 + n_i_x2) / 2,
+  hcNiHeaderExpandX     = n_i_x2,
+  hcNiHeaderExpandY     = 7,
+  hcNiHeaderSymbol0     = "+",
+  hcNiHeaderSymbol1     = "-",
+  hcNiTotalX0           = n_i_x1 + hcNGroupTotalX0Shift, 
+  hcNiTotalY            = hcTotalY,
+  hcNiPercentTextX      = n_i_x2 - 1, 
+  hcNiPercentBarFill    = 'rgba(117,112,179, 0.2)',
+  hcNiPercentTextFill   = 'rgb(117,112,179)',
+  
+  hcNwHeaderTitle       = "Waste",
+  hcNwHeaderTitleX      = (n_w_x1 + n_w_x2) / 2,
+  hcNwHeaderExpandX     = n_w_x2,
+  hcNwHeaderExpandY     = 7,
+  hcNwHeaderSymbol0     = "+",
+  hcNwHeaderSymbol1     = "-",
+  hcNwTotalX0           = n_w_x1 + hcNGroupTotalX0Shift, 
+  hcNwTotalY            = hcTotalY,
+  hcNwPercentTextX      = n_w_x2 - 1, 
+  hcNwPercentBarFill    = 'rgba(27,158,119, 0.2)',
+  hcNwPercentTextFill   = 'rgb(27,158,119)',
+  
+  hcNoHeaderTitle       = "Other",
+  hcNoHeaderTitleX      = (n_o_x1 + n_o_x2) / 2,
+  hcNoHeaderExpandX     = n_o_x2,
+  hcNoHeaderExpandY     = 7,
+  hcNoHeaderSymbol0     = "+",
+  hcNoHeaderSymbol1     = "-",
+  hcNoTotalX0           = n_o_x1 + hcNGroupTotalX0Shift, 
+  hcNoTotalY            = hcTotalY,
+  hcNoPercentTextX      = n_o_x2 - 1, 
+  hcNoPercentBarFill    = 'rgba(102,102,102, 0.2)',
+  hcNoPercentTextFill   = 'rgb(102,102,102)',
+
+  leHeaderTitle        = 'Total emissions in 2022',
+  leHeaderSymbol0      = '\uf055',
+  leHeaderSymbol1      = '\uf056',
+  leHeaderTitleX       = (leTotalX0 + leTotalX1) / 2,
+  # leHeaderTitleX       = leTotalX0 - 2,
+  leHeaderExpandX      = leTotalX1,
+  leHeaderExpandY      = 7,
+  leSlideInX           = leSlideInX,
+  leSlideOutLeftX      = leSlideOutLeftX,
+  leTotalX0            = leTotalX0,
+  leTotalX1            = leTotalX1,
+  leTotalY             = leTotalY,
+  lePercentBarY        = row_y1,
+  lePercentBarH        = row_y0 - row_y1,
+  lePercentBarRx       = 0.6,
+  lePercentBarRy       = 0.6,
+  lePercentBarFill     = 'rgba(253,191,111, 0.2)',
+  lePercentTextFill    = 'rgb(255,127,0)',
+  lePercentTextO1      = 0.6,
+  lePercentTextFontSize = 1.3,
+  
+  leCHeaderTitle       = "CO2",
+  leCHeaderTitleX      = (c_x1 + c_x2) / 2,
+  leCHeaderExpandX     = c_x2,
+  leCHeaderExpandY     = 7,
+  leCHeaderSymbol0     = "+",
+  leCHeaderSymbol1     = "-",
+  leCTotalX0           = c_x1 + 2, 
+  leCTotalY            = hcTotalY,
+  leCPercentTextX      = c_x2 - 1, 
+  leCPercentBarFill    = 'rgba(166,206,100, 0.2)',
+  leCPercentTextFill   = 'rgb(166,206,100)',
+  
+  leCcHeaderTitle       = "Coal",
+  leCcHeaderTitleX      = (c_c_x1 + c_c_x2) / 2,
+  leCcHeaderExpandX     = c_c_x2,
+  leCcHeaderExpandY     = 7,
+  leCcHeaderSymbol0     = "+",
+  leCcHeaderSymbol1     = "-",
+  leCcTotalX0           = c_c_x1 + hcCGroupTotalX0Shift, 
+  leCcTotalY            = hcTotalY,
+  leCcPercentTextX      = c_c_x2 - 1, 
+  leCcPercentBarFill    = 'rgba(166,118,29, 0.2)',
+  leCcPercentTextFill   = 'rgb(166,118,29)',
+  
+  leCoHeaderTitle       = "Oil",
+  leCoHeaderTitleX      = (c_o_x1 + c_o_x2) / 2,
+  leCoHeaderExpandX     = c_o_x2,
+  leCoHeaderExpandY     = 7,
+  leCoHeaderSymbol0     = "+",
+  leCoHeaderSymbol1     = "-",
+  leCoTotalX0           = c_o_x1 + hcCGroupTotalX0Shift, 
+  leCoTotalY            = hcTotalY,
+  leCoPercentTextX      = c_o_x2 - 1, 
+  leCoPercentBarFill    = 'rgba(102,102,102, 0.2)',
+  leCoPercentTextFill   = 'rgb(102,102,102)',
+
+  leCgHeaderTitle       = "Gas",
+  leCgHeaderTitleX      = (c_g_x1 + c_g_x2) / 2,
+  leCgHeaderExpandX     = c_g_x2,
+  leCgHeaderExpandY     = 7,
+  leCgHeaderSymbol0     = "+",
+  leCgHeaderSymbol1     = "-",
+  leCgTotalX0           = c_g_x1 + hcCGroupTotalX0Shift, 
+  leCgTotalY            = hcTotalY,
+  leCgPercentTextX      = c_g_x2 - 1, 
+  leCgPercentBarFill    = 'rgba(117,112,179, 0.2)',
+  leCgPercentTextFill   = 'rgb(117,112,179)',
+  
+  leClHeaderTitle       = "Land-use",
+  leClHeaderTitleX      = (c_l_x1 + c_l_x2) / 2,
+  leClHeaderExpandX     = c_l_x2,
+  leClHeaderExpandY     = 7,
+  leClHeaderSymbol0     = "+",
+  leClHeaderSymbol1     = "-",
+  leClTotalX0           = c_l_x1 + hcCGroupTotalX0Shift, 
+  leClTotalY            = hcTotalY,
+  leClPercentTextX      = c_l_x2 - 1, 
+  leClPercentBarFill    = 'rgba(27,158,119, 0.2)',
+  leClPercentTextFill   = 'rgb(27,158,119)',
+  
+  leCtHeaderTitle       = "Other",
+  leCtHeaderTitleX      = (c_t_x1 + c_t_x2) / 2,
+  leCtHeaderExpandX     = c_t_x2,
+  leCtHeaderExpandY     = 7,
+  leCtHeaderSymbol0     = "+",
+  leCtHeaderSymbol1     = "-",
+  leCtTotalX0           = c_t_x1 + hcCGroupTotalX0Shift, 
+  leCtTotalY            = hcTotalY,
+  leCtPercentTextX      = c_t_x2 - 1, 
+  leCtPercentBarFill    = 'rgba(217,95,2, 0.2)',
+  leCtPercentTextFill   = 'rgb(217,95,2)',
+  
+  leMHeaderTitle       = "Methane",
+  leMHeaderTitleX      = (m_x1 + m_x2) / 2,
+  leMHeaderExpandX     = m_x2,
+  leMHeaderExpandY     = 7,
+  leMHeaderSymbol0     = "+",
+  leMHeaderSymbol1     = "-",
+  leMTotalX0           = m_x1 + 2, 
+  leMTotalY            = hcTotalY, 
+  leMPercentTextX      = m_x2 - 1, 
+  leMPercentBarFill    = 'rgba(60,206,227, 0.2)',
+  leMPercentTextFill   = 'rgb(60,206,227)',
+  
+  leMcpHeaderTitle       = "Crops",
+  leMcpHeaderTitleX      = (m_cp_x1 + m_cp_x2) / 2,
+  leMcpHeaderExpandX     = m_cp_x2,
+  leMcpHeaderExpandY     = 7,
+  leMcpHeaderSymbol0     = "+",
+  leMcpHeaderSymbol1     = "-",
+  leMcpTotalX0           = m_cp_x1 + hcMGroupTotalX0Shift, 
+  leMcpTotalY            = hcTotalY, 
+  leMcpPercentTextX      = m_cp_x2 - 1, 
+  leMcpPercentBarFill    = 'rgba(102,166,30, 0.2)',
+  leMcpPercentTextFill   = 'rgb(102,166,30)',
+  
+  leMfcHeaderTitle       = "Fuel",
+  leMfcHeaderTitleX      = (m_fc_x1 + m_fc_x2) / 2,
+  leMfcHeaderExpandX     = m_fc_x2,
+  leMfcHeaderExpandY     = 7,
+  leMfcHeaderSymbol0     = "+",
+  leMfcHeaderSymbol1     = "-",
+  leMfcTotalX0           = m_fc_x1 + hcMGroupTotalX0Shift, 
+  leMfcTotalY            = hcTotalY, 
+  leMfcPercentTextX      = m_fc_x2 - 1, 
+  leMfcPercentBarFill    = 'rgba(166,118,29, 0.2)',
+  leMfcPercentTextFill   = 'rgb(166,118,29)',
+  
+  leMfeHeaderTitle       = "Fugitive",
+  leMfeHeaderTitleX      = (m_fe_x1 + m_fe_x2) / 2,
+  leMfeHeaderExpandX     = m_fe_x2,
+  leMfeHeaderExpandY     = 7,
+  leMfeHeaderSymbol0     = "+",
+  leMfeHeaderSymbol1     = "-",
+  leMfeTotalX0           = m_fe_x1 + hcMGroupTotalX0Shift, 
+  leMfeTotalY            = hcTotalY, 
+  leMfePercentTextX      = m_fe_x2 - 1, 
+  leMfePercentBarFill    = 'rgba(117,112,179, 0.2)',
+  leMfePercentTextFill   = 'rgb(117,112,179)',
+  
+  leMliHeaderTitle       = "Livestock",
+  leMliHeaderTitleX      = (m_li_x1 + m_li_x2) / 2,
+  leMliHeaderExpandX     = m_li_x2,
+  leMliHeaderExpandY     = 7,
+  leMliHeaderSymbol0     = "+",
+  leMliHeaderSymbol1     = "-",
+  leMliTotalX0           = m_li_x1 + hcMGroupTotalX0Shift, 
+  leMliTotalY            = hcTotalY, 
+  leMliPercentTextX      = m_li_x2 - 1, 
+  leMliPercentBarFill    = 'rgba(217,95,2, 0.2)',
+  leMliPercentTextFill   = 'rgb(217,95,2)',
+  
+  leMwaHeaderTitle       = "Waste",
+  leMwaHeaderTitleX      = (m_wa_x1 + m_wa_x2) / 2,
+  leMwaHeaderExpandX     = m_wa_x2,
+  leMwaHeaderExpandY     = 7,
+  leMwaHeaderSymbol0     = "+",
+  leMwaHeaderSymbol1     = "-",
+  leMwaTotalX0           = m_wa_x1 + hcMGroupTotalX0Shift, 
+  leMwaTotalY            = hcTotalY, 
+  leMwaPercentTextX      = m_wa_x2 - 1, 
+  leMwaPercentBarFill    = 'rgba(27,158,119, 0.2)',
+  leMwaPercentTextFill   = 'rgb(27,158,119)',
+  
+  leMotHeaderTitle       = "Other",
+  leMotHeaderTitleX      = (m_ot_x1 + m_ot_x2) / 2,
+  leMotHeaderExpandX     = m_ot_x2,
+  leMotHeaderExpandY     = 7,
+  leMotHeaderSymbol0     = "+",
+  leMotHeaderSymbol1     = "-",
+  leMotTotalX0           = m_ot_x1 + hcMGroupTotalX0Shift, 
+  leMotTotalY            = hcTotalY, 
+  leMotPercentTextX      = m_ot_x2 - 1, 
+  leMotPercentBarFill    = 'rgba(102,102,102, 0.2)',
+  leMotPercentTextFill   = 'rgb(102,102,102)',
+  
+  leNHeaderTitle       = "N2O",
+  leNHeaderTitleX      = (n_x1 + n_x2) / 2,
+  leNHeaderExpandX     = n_x2,
+  leNHeaderExpandY     = 7,
+  leNHeaderSymbol0     = "+",
+  leNHeaderSymbol1     = "-",
+  leNTotalX0           = n_x1 + 2, 
+  leNTotalY            = hcTotalY,
+  leNPercentTextX      = n_x2 - 1, 
+  leNPercentBarFill    = 'rgba(166,40,227, 0.2)',
+  leNPercentTextFill   = 'rgb(166,40,227)',
+  
+  leNaHeaderTitle       = "Agriculture",
+  leNaHeaderTitleX      = (n_a_x1 + n_a_x2) / 2,
+  leNaHeaderExpandX     = n_a_x2,
+  leNaHeaderExpandY     = 7,
+  leNaHeaderSymbol0     = "+",
+  leNaHeaderSymbol1     = "-",
+  leNaTotalX0           = n_a_x1 + hcNGroupTotalX0Shift, 
+  leNaTotalY            = hcTotalY,
+  leNaPercentTextX      = n_a_x2 - 1, 
+  leNaPercentBarFill    = 'rgba(102,166,30, 0.2)',
+  leNaPercentTextFill   = 'rgb(102,166,30)',
+  
+  leNeHeaderTitle       = "Energy",
+  leNeHeaderTitleX      = (n_e_x1 + n_e_x2) / 2,
+  leNeHeaderExpandX     = n_e_x2,
+  leNeHeaderExpandY     = 7,
+  leNeHeaderSymbol0     = "+",
+  leNeHeaderSymbol1     = "-",
+  leNeTotalX0           = n_e_x1 + hcNGroupTotalX0Shift, 
+  leNeTotalY            = hcTotalY,
+  leNePercentTextX      = n_e_x2 - 1, 
+  leNePercentBarFill    = 'rgba(230,171,2, 0.2)',
+  leNePercentTextFill   = 'rgb(230,171,2)',
+  
+  leNiHeaderTitle       = "Industry",
+  leNiHeaderTitleX      = (n_i_x1 + n_i_x2) / 2,
+  leNiHeaderExpandX     = n_i_x2,
+  leNiHeaderExpandY     = 7,
+  leNiHeaderSymbol0     = "+",
+  leNiHeaderSymbol1     = "-",
+  leNiTotalX0           = n_i_x1 + hcNGroupTotalX0Shift, 
+  leNiTotalY            = hcTotalY,
+  leNiPercentTextX      = n_i_x2 - 1, 
+  leNiPercentBarFill    = 'rgba(117,112,179, 0.2)',
+  leNiPercentTextFill   = 'rgb(117,112,179)',
+  
+  leNwHeaderTitle       = "Waste",
+  leNwHeaderTitleX      = (n_w_x1 + n_w_x2) / 2,
+  leNwHeaderExpandX     = n_w_x2,
+  leNwHeaderExpandY     = 7,
+  leNwHeaderSymbol0     = "+",
+  leNwHeaderSymbol1     = "-",
+  leNwTotalX0           = n_w_x1 + hcNGroupTotalX0Shift, 
+  leNwTotalY            = hcTotalY,
+  leNwPercentTextX      = n_w_x2 - 1, 
+  leNwPercentBarFill    = 'rgba(27,158,119, 0.2)',
+  leNwPercentTextFill   = 'rgb(27,158,119)',
+  
+  leNoHeaderTitle       = "Other",
+  leNoHeaderTitleX      = (n_o_x1 + n_o_x2) / 2,
+  leNoHeaderExpandX     = n_o_x2,
+  leNoHeaderExpandY     = 7,
+  leNoHeaderSymbol0     = "+",
+  leNoHeaderSymbol1     = "-",
+  leNoTotalX0           = n_o_x1 + hcNGroupTotalX0Shift, 
+  leNoTotalY            = hcTotalY,
+  leNoPercentTextX      = n_o_x2 - 1, 
+  leNoPercentBarFill    = 'rgba(102,102,102, 0.2)',
+  leNoPercentTextFill   = 'rgb(102,102,102)',
+  
+  pcHeaderTitle        = 'Per capita emissions in 2022',
+  pcHeaderSymbol0      = '\uf055',
+  pcHeaderSymbol1      = '\uf056',
+  pcHeaderTitleX       = (pcTotalX0 + pcTotalX1) / 2,
+  # pcHeaderTitleX       = pcTotalX0 - 2,
+  pcHeaderExpandX      = pcTotalX1,
+  pcHeaderExpandY      = 7,
+  pcBarsTextX          = 86.471, # UPDATE THIS VALUE WHEN YOU CHANGE THE pc_bars
+  pcTotalX0            = pcTotalX0,
+  pcTotalX1            = pcTotalX1,
+  pcTotalY             = pcTotalY,
+  pcBarsTextFontSize   = 1.4)
+dataSettings %>% 
+  write_json_data(name = "dataSettings", compact = FALSE)
+```
+
+```{r}
+hcTotalX1 + 1 + dataSettings$hcSlideInX
+```
+
+
+```{r}
+scale_linear_table <- tibble::tribble(
+  ~name, ~func, 
+  # CO2 Total
+  "co2_total_area_x"              , scale_linear(range = c(c_x1, c_x2), domain = c(0, 1), round = round_for_scale),
+  
+  # "co2_fos_area_x"                , scale_linear(range = c(, ), domain = c(0, 1), round = round_for_scale),
+  "co2_coal_area_x"               , scale_linear(range = c(c_c_x1, c_c_x2), domain = c(0, 1), round = round_for_scale),
+  "co2_oil_area_x"                , scale_linear(range = c(c_o_x1, c_o_x2), domain = c(0, 1), round = round_for_scale),
+  "co2_gas_area_x"                , scale_linear(range = c(c_g_x1, c_g_x2), domain = c(0, 1), round = round_for_scale),
+  "co2_lu_area_x"                 , scale_linear(range = c(c_l_x1, c_l_x2), domain = c(0, 1), round = round_for_scale),
+  "co2_other_area_x"              , scale_linear(range = c(c_t_x1, c_t_x2), domain = c(0, 1), round = round_for_scale),
+  
+  # CH4 total
+  "ch4_total_area_x"              , scale_linear(range = c(m_x1, m_x2), domain = c(0, 1), round = round_for_scale),
+  
+  "ch4_crop_production_area_x"    , scale_linear(range = c(m_cp_x1, m_cp_x2), domain = c(0, 1), round = round_for_scale),
+  "ch4_fuel_combustion_area_x"    , scale_linear(range = c(m_fc_x1, m_fc_x2), domain = c(0, 1), round = round_for_scale),
+  "ch4_fugitive_emissions_area_x" , scale_linear(range = c(m_fe_x1, m_fe_x2), domain = c(0, 1), round = round_for_scale),
+  "ch4_livestock_area_x"          , scale_linear(range = c(m_li_x1, m_li_x2), domain = c(0, 1), round = round_for_scale),
+  "ch4_other_area_x"              , scale_linear(range = c(m_ot_x1, m_ot_x2), domain = c(0, 1), round = round_for_scale),
+  "ch4_waste_area_x"              , scale_linear(range = c(m_wa_x1, m_wa_x2), domain = c(0, 1), round = round_for_scale),
+  
+  # N20 total
+  "n2o_total_area_x"              , scale_linear(range = c(n_x1, n_x2), domain = c(0, 1), round = round_for_scale),
+  
+  "n2o_agriculture_area_x"        , scale_linear(range = c(n_a_x1, n_a_x2), domain = c(0, 1), round = round_for_scale),
+  "n2o_energy_area_x"             , scale_linear(range = c(n_e_x1, n_e_x2), domain = c(0, 1), round = round_for_scale),
+  "n2o_industry_area_x"           , scale_linear(range = c(n_i_x1, n_i_x2), domain = c(0, 1), round = round_for_scale),
+  "n2o_other_area_x"              , scale_linear(range = c(n_o_x1, n_o_x2), domain = c(0, 1), round = round_for_scale),
+  "n2o_waste_area_x"              , scale_linear(range = c(n_w_x1, n_w_x2), domain = c(0, 1), round = round_for_scale),
+
+  #"population_M_area_x"           , scale_linear(range = c(, ), domain = c(0, 1), round = round_for_scale),
+  
+  "co2_coal_perc", list(3) 
+)
+# names(ghg[-1:-4]) %>% paste0(., '_area_x"') %>% stringr::str_pad(31, "right") %>% paste0('"', ., ', scale_linear(range = c(, ), domain = c(0, 1), round = round_for_scale),\n') %>% cat()
+```
+
+# Core
+
+```{r}
+core <- ghg %>% 
+  group_by(region) %>% 
+  summarise(ghg_total = sum(ghg_total), .groups = "drop") %>% 
+  # filter(year == max(year)) %>% 
+  # ungroup() %>% 
+  arrange(desc(ghg_total)) %>% 
+  mutate(yPositionDefault = seq_len(n()) - 1) %>% 
+  mutate(yPositionDefault = if_else(yPositionDefault == 0, 0.5, yPositionDefault + 1)) %>% 
+  mutate(yOffsetDefault = yPositionDefault / n()) %>% 
+  mutate(yOffsetDefault = scale_linear_y_offset(yOffsetDefault)) %>% 
+  arrange(desc(ghg_total)) %>% 
+  select(region, yPositionDefault, yOffsetDefault)
+
+core
+```
+
+# Titles
+
+```{r}
+titles <- ghg %>% 
+  distinct(region) %>% 
+  mutate(title = region) %>% 
+  mutate(title = if_else(title == "Global", "GLOBAL", title)) %>% 
+  mutate(x = x_titles,
+         y = y_titles) %>% 
+  left_join(select(core, region, i = yPositionDefault), by = "region") %>% 
+  nest(title = c(title, x, y, i))
+
+titles %>% filter(region == "France") %>% pull(title)
+```
+
+# Historic contribution
+
+```{r}
+hc_area <- ghg %>%
+  group_by(region) %>% 
+  mutate(ghg_total = cumsum(ghg_total)) %>% 
+  ungroup() %>% 
+  # filter(year >= 1850) %>% 
+  # x before groupoing to all be on the same scale
+  mutate(x = year %/% 10) %>% 
+  mutate(x = x - min(x)) %>% 
+  mutate(x = x / max(x)) %>% 
+  group_by(region, x) %>% 
+  summarise(ghg_total = max(ghg_total), .groups = "drop") %>% 
+  group_by(region) %>% 
+  # mutate(y = ghg_total / max(ghg_total)) %>% 
+  mutate(y = ghg_total / max(ghg_total)) %>%
+  select(-ghg_total) %>% 
+  nest(hcArea = c(x, y)) %>% 
+  ungroup() %>% 
+  mutate(hcArea = map(hcArea, function(d_) {
+    d_ %>%
+      mutate(x = scale_linear_x_hc_area(x)) %>% 
+      mutate(y0 = scale_linear_y_hc_area(0)) %>% 
+      mutate(y1 = scale_linear_y_hc_area(y)) %>% 
+      select(-y)
+  }))
+```
+
+```{r}
+hc_total_percent <- ghg %>% 
+  group_by(region) %>% 
+  summarise(ghg_total = sum(ghg_total)) %>% 
+  arrange(desc(ghg_total)) %>% 
+  mutate(perc_global = 100 * ghg_total / ghg_total[1]) %>% 
+  mutate(ghg_total_text = case_when(
+    ghg_total > 1e3  ~ paste0(round(ghg_total)),
+    ghg_total > 100  ~ paste0(' ',   round(ghg_total)),
+    ghg_total > 20   ~ paste0('  ',  round(ghg_total)),
+    ghg_total > 10   ~ paste0('  ',  sprintf("%.1f", round(ghg_total, 1))),
+    ghg_total > 2    ~ paste0('   ', sprintf("%.1f", round(ghg_total, 1))),
+    ghg_total > 0.01 ~ paste0('   ', sprintf("%.2f", round(ghg_total, 2))),
+    ghg_total == 0   ~ paste0('   0'),
+    TRUE             ~ paste0('  <0.01'))) %>% 
+  mutate(perc_text = case_when(
+    region == "Global" ~ "Percentage of Global",
+    perc_global > 10   ~ paste0(round(perc_global, 0), "%"),
+    perc_global > 1    ~ paste0(round(perc_global, 1), "%"),
+    perc_global > 0.1  ~ paste0(round(perc_global, 2), "%"),
+    perc_global > 0.01 ~ paste0(round(perc_global, 2), "%"),
+    perc_global == 0   ~ paste0('0'),
+    TRUE ~ "<0.01%"))
+```
+
+```{r}
+hc_text_total <- hc_total_percent %>% 
+  select(region, hcTextTotal = ghg_total_text) %>% 
+  mutate(hcTextTotal   = map(hcTextTotal, ~ tibble::tibble(text = .)))
+```
+
+```{r}
+hc_text_percent <- hc_total_percent %>% 
+  mutate(x = if_else(region == "Global", 
+                     scale_linear_x_hc_percent_bar(0), 
+                     scale_linear_x_hc_percent_bar(perc_global / 100))) %>% 
+  mutate(x = x - 0.3) %>% 
+  select(region, text = perc_text, x) %>% 
+  nest(hcTextPercent = c(text, x))
+```
+
+```{r}
+hc_percent_bar <- hc_total_percent %>% 
+  mutate(x0 = scale_linear_x_hc_percent_bar(0), 
+         x1 = scale_linear_x_hc_percent_bar(perc_global / 100)) %>% 
+  mutate(w = x0 - x1) %>% 
+  select(region, x = x1, w) %>% 
+  nest(hcPercentBar = c(x, w))
+```
+
+# Historical Emissions Greenhouse Gas
+
+Areas
+```{r}
+hc_ghg_area <- ghg %>% 
+  group_by(region) %>% 
+  mutate(across(co2_total:n2o_waste, ~ cumsum(.)), .groups = "drop") %>% 
+  ungroup() %>% 
+  filter(year >= 1850) %>% 
+  # x before grouping to all be on the same scale
+  mutate(x = year %/% 10) %>% 
+  mutate(x = x - min(x)) %>% 
+  mutate(x = x / max(x)) %>% 
+  group_by(region, x) %>% 
+  summarise(across(co2_total:n2o_waste, ~ max(.)), .groups = "drop") #%>% 
+  # group_by(region) %>% 
+  # mutate(y = ghg_total / max(ghg_total)) %>% 
+  # mutate(across(co2_total:n2o_waste, ~ . - min(., na.rm = TRUE))) %>%
+  # mutate(across(co2_total:n2o_waste, ~ . / max(., na.rm = TRUE))) %>%
+  # mutate(across(co2_total:n2o_waste, ~ if_else(is.na(.), 0, .))) 
+
+hc_ghg_area <- hc_ghg_area %>% 
+  group_by(region) %>%
+  summarise(across(co2_total:n2o_waste, 
+                   function(col) {
+                     name_   <- cur_column()
+                     name_x_ <- paste0(name_, "_area_x")
+                     name_y_ <- paste0(name_, "_area_y")
+                     
+                     scale_linear_x_ <- scale_linear_table %>% 
+                       filter(name == name_x_) %>% 
+                       pull(func) %>% 
+                       `[[`(1)
+                     
+                     scale_linear_y_ <- scale_linear_y_hc_area
+                     
+                     col_min <- min(c(col, 0), na.rm = TRUE) # Zero line or negative value
+                     col_max <- max(col, na.rm = TRUE)
+                     
+                     col_normal <- (col - col_min) / (col_max - col_min)
+                     col_normal[is.na(col_normal)] <- 0
+                     
+                     zero_line  <- (0 - col_min) / (col_max - col_min)
+                     if (is.na(zero_line)) { zero_line <- 0 }
+                     
+                     list(tibble(x  = scale_linear_x_(x), 
+                                 y0 = scale_linear_y_(zero_line),
+                                 y1 = scale_linear_y_(col_normal)))
+                   }))
+
+names(hc_ghg_area)[names(hc_ghg_area) != "region"] <- names(hc_ghg_area)[names(hc_ghg_area) != "region"] %>% 
+  stringr::str_replace_all("_", "") %>% 
+  paste0("hcArea", .)
+```
+
+
+
+```{r}
+hc_ghg <- ghg %>% 
+  select(-population_M) %>% 
+  pivot_longer(ghg_total:n2o_waste, names_to = "variable", values_to = "value") %>% 
+  group_by(region, variable) %>% 
+  summarise(value = sum(value), .groups = "drop") %>% 
+  group_by(region) %>% 
+  pivot_wider(names_from = "variable", values_from = "value") %>% 
+  mutate(across(contains("co2"), ~ round(100 * . / co2_total, 3), .names = "{.col}_perc")) %>% 
+  mutate(across(contains("ch4"), ~ round(100 * . / ch4_total, 3), .names = "{.col}_perc")) %>% 
+  mutate(across(contains("n2o"), ~ round(100 * . / n2o_total, 3), .names = "{.col}_perc")) %>% 
+  select(-co2_total_perc, -ch4_total_perc, -n2o_total_perc) %>% 
+  mutate(across(c(co2_total, ch4_total, n2o_total), ~ round(100 * . / ghg_total, 3), .names = "{.col}_perc"))
+```
+
+```{r}
+hc_ghg_total_percent <- hc_ghg %>% 
+  mutate(across(contains("_perc"), 
+                function(col) {
+                  case_when(
+                    region == "Global" ~ "Percentage of Global",
+                    col > 10   ~ paste0(round(col, 0), "%"),
+                    col > 1    ~ paste0(round(col, 1), "%"),
+                    col > 0.1  ~ paste0(round(col, 2), "%"),
+                    col > 0.01 ~ paste0(round(col, 2), "%"),
+                    col == 0   ~ paste0('0%'),
+                    TRUE ~ "<0.01%")
+                },
+                .names = "{stringr::str_sub(.col, 1, -6)}_textperc"))
+```
+
+```{r}
+hc_ghg_text_total <- hc_ghg %>% 
+  select(!contains("_perc")) %>% 
+  mutate(across(!contains("region"), 
+                function(col) {
+                  list(tibble::tibble(text = case_when(
+                    abs(col) > 1e3  ~ paste0(round(col)),
+                    abs(col) > 100  ~ paste0(if_else(sign(col) == -1, "",   " "),   round(col)),
+                    abs(col) > 20   ~ paste0(if_else(sign(col) == -1, " ",  "  "),  round(col)),
+                    abs(col) > 10   ~ paste0(if_else(sign(col) == -1, " ",  "  "),  sprintf("%.1f", round(col, 1))),
+                    abs(col) > 2    ~ paste0(if_else(sign(col) == -1, "  ", "   "), sprintf("%.1f", round(col, 1))),
+                    abs(col) > 0.01 ~ paste0(if_else(sign(col) == -1, "  ", "   "), sprintf("%.2f", round(col, 2))),
+                    col == 0        ~ paste0('   0'),
+                    TRUE            ~ paste0(stringr::str_pad(paste0("<", stringr::str_sub(sign(col), -2, -2)), 3, 'left'), '0.01'))))
+                }))
+
+names(hc_ghg_text_total)[names(hc_ghg_text_total) != "region"] <- names(hc_ghg_text_total)[names(hc_ghg_text_total) != "region"] %>% 
+  stringr::str_replace_all("_", "") %>% 
+  paste0("hcTextTotal", .)
+```
+
+```{r}
+hc_ghg_text_perc <- hc_ghg %>% 
+  select(region, contains("_perc")) %>% 
+  mutate(across(!contains("region"), 
+                function(col) {
+                  name_ <- cur_column()
+                  title_word <- case_when(
+                    stringr::str_sub(name_, 5, 9) == "total" ~ "Region",
+                    stringr::str_sub(name_, 1, 3) == "co2"   ~ "CO2",
+                    stringr::str_sub(name_, 1, 3) == "ch4"   ~ "CH4",
+                    stringr::str_sub(name_, 1, 3) == "n2o"   ~ "N2O",
+                    TRUE ~ "")
+                  
+                  tbl_ <- tibble(
+                    text = case_when(
+                      region == "Global" ~ c(paste0("% of ", title_word), paste0(round(col, 0), "%")),
+                      abs(col) > 10   ~ paste0(round(col, 0), "%"),
+                      abs(col) > 1    ~ paste0(round(col, 1), "%"),
+                      abs(col) > 0.1  ~ paste0(round(col, 2), "%"),
+                      abs(col) > 0.01 ~ paste0(round(col, 2), "%"),
+                      col == 0        ~ paste0('0%'),
+                      TRUE            ~ paste0("< 0.01%")),
+                    yShift = case_when(
+                      region == "Global" ~ c(-4, 0),
+                      TRUE ~ 0))
+                  list(tbl_)
+                }))
+
+names(hc_ghg_text_perc)[names(hc_ghg_text_perc) != "region"] <- names(hc_ghg_text_perc)[names(hc_ghg_text_perc) != "region"] %>% 
+  stringr::str_sub(1, -6) %>% 
+  stringr::str_replace_all("_", "") %>% 
+  paste0("hcTextPercent", .)
+```
+
+```{r}
+hc_ghg_percent_bar <- hc_ghg %>% 
+  select(region, contains("_perc")) %>% 
+  mutate(across(!contains("region"), 
+                function(col) {
+                  
+                  name_   <- cur_column()
+                  name_x_ <- name_ %>% 
+                    stringr::str_sub(1, -6) %>% 
+                    paste0("_area_x")
+                  
+                  scale_linear_x_ <- scale_linear_table %>% 
+                    filter(name == name_x_) %>% 
+                    pull(func) %>% 
+                    `[[`(1)
+                  
+                  list(
+                    tibble(x0 = scale_linear_x_(1),
+                           x1 = scale_linear_x_(1 - (col / 100))) %>% 
+                      mutate(w = x0 - x1) %>% 
+                      select(x = x1, w)
+                  )
+                }))
+
+names(hc_ghg_percent_bar)[names(hc_ghg_percent_bar) != "region"] <- names(hc_ghg_percent_bar)[names(hc_ghg_percent_bar) != "region"] %>% 
+  stringr::str_sub(1, -6) %>% 
+  stringr::str_replace_all("_", "") %>% 
+  paste0("hcPercentBar", .)
+```
+
+# Latest emissions
+
+```{r}
+le_total_percent <- ghg %>% 
+  group_by(region) %>% 
+  filter(year == max(year)) %>%
+  ungroup() %>% 
+  arrange(desc(ghg_total)) %>% 
+  mutate(ghg_total = ghg_total) %>% 
+  mutate(perc_global = 100 * ghg_total / ghg_total[1]) %>% 
+  mutate(ghg_total_text = case_when(
+    # ghg_total >= 20   ~ paste0(round(ghg_total)),
+    ghg_total >= 10   ~ paste0(sprintf("%.1f", round(ghg_total,  1))),
+    ghg_total > 2     ~ paste0(' ', sprintf("%.1f", round(ghg_total,  1))),
+    ghg_total > 0.2   ~ paste0(' ', sprintf("%.2f", round(ghg_total,  2))),
+    ghg_total > 0.01  ~ paste0(' ', sprintf("%.3f", round(ghg_total,  3))),
+    TRUE              ~ paste0('<0.01'))) %>% 
+  mutate(perc_text = case_when(
+    region == "Global" ~ "Percentage of Global",
+    perc_global > 10   ~ paste0(round(perc_global, 0), "%"),
+    perc_global > 1    ~ paste0(round(perc_global, 1), "%"),
+    perc_global > 0.1  ~ paste0(round(perc_global, 2), "%"),
+    perc_global > 0.01 ~ paste0(round(perc_global, 2), "%"),
+    TRUE ~ "<0.01%"))
+```
+
+
+```{r}
+le_text_total <- le_total_percent %>% 
+  select(region, leTextTotal = ghg_total_text) %>% 
+  mutate(leTextTotal = map(leTextTotal, ~ tibble::tibble(text = .)))
+```
+
+```{r}
+le_text_percent <- le_total_percent %>% 
+  mutate(x = if_else(region == "Global", 
+                     scale_linear_x_le_percent_bar(0), 
+                     scale_linear_x_le_percent_bar(perc_global / 100))) %>% 
+  mutate(x = x - 0.3) %>% 
+  select(region, text = perc_text, x) %>% 
+  nest(leTextPercent = c(text, x))
+```
+
+```{r}
+le_percent_bar <- le_total_percent %>% 
+  mutate(x0 = scale_linear_x_le_percent_bar(0), 
+         x1 = scale_linear_x_le_percent_bar(perc_global / 100)) %>% 
+  mutate(w = x0 - x1) %>% 
+  select(region, x = x1, w) %>% 
+  nest(lePercentBar = c(x, w))
+```
+
+
+```{r}
+le_line <- ghg %>% 
+  filter(year >= 1850) %>% 
+  # x before groupoing to all be on the same scale
+  mutate(x = year %/% 10) %>% 
+  mutate(x = x - min(x)) %>% 
+  mutate(x = x / max(x)) %>% 
+  group_by(region, x) %>% 
+  summarise(ghg_total = mean(ghg_total), .groups = "drop") %>% 
+  group_by(region) %>% 
+  # mutate(y = ghg_total / max(ghg_total)) %>% 
+  mutate(y = ghg_total / max(ghg_total)) %>%
+  select(-ghg_total) %>% 
+  nest(leLine = c(x, y)) %>% 
+  ungroup() %>%  
+  mutate(leLine = map(leLine, function(d_) {
+    d_ %>%
+      mutate(x = scale_linear_x_le_line(x)) %>% 
+      mutate(y = scale_linear_y_le_line(y))
+  }))
+```
+
+```{r}
+le_line_dot <- le_line %>% 
+  rename(leLineDot = leLine) %>% 
+  mutate(leLineDot = map(leLineDot, ~ tail(., 1)))
+```
+
+# Latest Emissions Greenhouse Gas
+
+Lines
+```{r}
+le_ghg_line <- ghg %>% 
+  filter(year >= 1850) %>% 
+  # x before grouping to all be on the same scale
+  mutate(x = year %/% 10) %>% 
+  mutate(x = x - min(x)) %>% 
+  mutate(x = x / max(x)) %>% 
+  group_by(region, x) %>% 
+  summarise(across(co2_total:n2o_waste, ~ mean(.)), .groups = "drop")
+
+le_ghg_line <- le_ghg_line %>% 
+  group_by(region) %>%
+  summarise(across(co2_total:n2o_waste, 
+                   function(col) {
+                     name_   <- cur_column()
+                     
+                     # Use name with area instead of link because the scale functions we can reuse from area
+                     name_x_ <- paste0(name_, "_area_x")
+                     name_y_ <- paste0(name_, "_area_y")
+                     
+                     scale_linear_x_ <- scale_linear_table %>% 
+                       filter(name == name_x_) %>% 
+                       pull(func) %>% 
+                       `[[`(1)
+                     
+                     scale_linear_y_ <- scale_linear_y_hc_area
+                     
+                     col_min <- min(c(col, 0), na.rm = TRUE) # Zero line or negative value
+                     col_max <- max(col, na.rm = TRUE)
+                     
+                     col_normal <- (col - col_min) / (col_max - col_min)
+                     col_normal[is.na(col_normal)] <- 0
+                     
+                     # zero_line  <- (0 - col_min) / (col_max - col_min)
+                     # if (is.na(zero_line)) { zero_line <- 0 }
+                     
+                     list(tibble(x = scale_linear_x_(x), 
+                                 y = scale_linear_y_(col_normal)))
+                   }))
+
+names(le_ghg_line)[names(le_ghg_line) != "region"] <- names(le_ghg_line)[names(le_ghg_line) != "region"] %>% 
+  stringr::str_replace_all("_", "") %>% 
+  paste0("leLine", .)
+# le_ghg_line$leLineco2total[[1]]
+```
+
+```{r}
+le_ghg_line_dot <- le_ghg_line %>% 
+  mutate(across(-region, function(col_) {
+    map(col_, ~ tail(., 1))
+  }))
+
+names(le_ghg_line_dot)[-1] <- paste0(stringr::str_sub(names(le_ghg_line_dot[-1]), 1, 6), "Dot", stringr::str_sub(names(le_ghg_line_dot[-1]), 7, -1))
+```
+
+
+
+```{r}
+le_ghg <- ghg %>% 
+  select(-population_M, -area) %>% 
+  pivot_longer(ghg_total:n2o_waste, names_to = "variable", values_to = "value") %>% 
+  group_by(region, variable) %>% 
+  filter(year == max(year)) %>% 
+  ungroup() %>% 
+  group_by(region) %>% 
+  pivot_wider(names_from = "variable", values_from = "value") %>% 
+  mutate(across(contains("co2"), ~ round(100 * . / co2_total, 3), .names = "{.col}_perc")) %>% 
+  mutate(across(contains("ch4"), ~ round(100 * . / ch4_total, 3), .names = "{.col}_perc")) %>% 
+  mutate(across(contains("n2o"), ~ round(100 * . / n2o_total, 3), .names = "{.col}_perc")) %>% 
+  select(-co2_total_perc, -ch4_total_perc, -n2o_total_perc) %>% 
+  mutate(across(c(co2_total, ch4_total, n2o_total), ~ round(100 * . / ghg_total, 3), .names = "{.col}_perc"))
+```
+
+```{r}
+le_ghg_total_percent <- le_ghg %>% 
+  mutate(across(contains("_perc"), 
+                function(col) {
+                  case_when(
+                    region == "Global" ~ "Percentage of Global",
+                    col > 10   ~ paste0(round(col, 0), "%"),
+                    col > 1    ~ paste0(round(col, 1), "%"),
+                    col > 0.1  ~ paste0(round(col, 2), "%"),
+                    col > 0.01 ~ paste0(round(col, 2), "%"),
+                    col == 0   ~ paste0('0%'),
+                    TRUE ~ "<0.01%")
+                },
+                .names = "{stringr::str_sub(.col, 1, -6)}_textperc"))
+```
+
+```{r}
+le_ghg_text_total <- le_ghg %>% 
+  select(!contains("_perc")) %>% 
+  mutate(across(!contains("region"), 
+                function(col) {
+                  list(tibble::tibble(text = case_when(
+                    abs(col) > 1e3  ~ paste0(round(col)),
+                    abs(col) > 100  ~ paste0(if_else(sign(col) == -1, "",   " "),   round(col)),
+                    abs(col) > 20   ~ paste0(if_else(sign(col) == -1, " ",  "  "),  round(col)),
+                    abs(col) > 10   ~ paste0(if_else(sign(col) == -1, " ",  "  "),  sprintf("%.1f", round(col, 1))),
+                    abs(col) > 2    ~ paste0(if_else(sign(col) == -1, "  ", "   "), sprintf("%.1f", round(col, 1))),
+                    abs(col) > 0.01 ~ paste0(if_else(sign(col) == -1, "  ", "   "), sprintf("%.2f", round(col, 2))),
+                    col == 0        ~ paste0('   0'),
+                    TRUE            ~ paste0(stringr::str_pad(paste0("<", stringr::str_sub(sign(col), -2, -2)), 3, 'left'), '0.01'))))
+                }))
+
+names(le_ghg_text_total)[names(le_ghg_text_total) != "region"] <- names(le_ghg_text_total)[names(le_ghg_text_total) != "region"] %>% 
+  stringr::str_replace_all("_", "") %>% 
+  paste0("leTextTotal", .)
+```
+
+```{r}
+le_ghg_text_perc <- le_ghg %>% 
+  select(region, contains("_perc")) %>% 
+  mutate(across(!contains("region"), 
+                function(col) {
+                  name_ <- cur_column()
+                  title_word <- case_when(
+                    stringr::str_sub(name_, 5, 9) == "total" ~ "Region",
+                    stringr::str_sub(name_, 1, 3) == "co2"   ~ "CO2",
+                    stringr::str_sub(name_, 1, 3) == "ch4"   ~ "CH4",
+                    stringr::str_sub(name_, 1, 3) == "n2o"   ~ "N2O",
+                    TRUE ~ "")
+                  
+                  tbl_ <- tibble(
+                    text = case_when(
+                      region == "Global" ~ c(paste0("% of ", title_word), paste0(round(col, 0), "%")),
+                      abs(col) > 10   ~ paste0(round(col, 0), "%"),
+                      abs(col) > 1    ~ paste0(round(col, 1), "%"),
+                      abs(col) > 0.1  ~ paste0(round(col, 2), "%"),
+                      abs(col) > 0.01 ~ paste0(round(col, 2), "%"),
+                      col == 0        ~ paste0('0%'),
+                      TRUE            ~ paste0("< 0.01%")),
+                    yShift = case_when(
+                      region == "Global" ~ c(-4, 0),
+                      TRUE ~ 0))
+                  list(tbl_)
+                }))
+
+names(le_ghg_text_perc)[names(le_ghg_text_perc) != "region"] <- names(le_ghg_text_perc)[names(le_ghg_text_perc) != "region"] %>% 
+  stringr::str_sub(1, -6) %>% 
+  stringr::str_replace_all("_", "") %>% 
+  paste0("leTextPercent", .)
+```
+
+```{r}
+le_ghg_percent_bar <- le_ghg %>% 
+  select(region, contains("_perc")) %>% 
+  mutate(across(!contains("region"), 
+                function(col) {
+                  
+                  name_   <- cur_column()
+                  name_x_ <- name_ %>% 
+                    stringr::str_sub(1, -6) %>% 
+                    paste0("_area_x")
+                  
+                  scale_linear_x_ <- scale_linear_table %>% 
+                    filter(name == name_x_) %>% 
+                    pull(func) %>% 
+                    `[[`(1)
+                  
+                  list(
+                    tibble(x0 = scale_linear_x_(1),
+                           x1 = scale_linear_x_(1 - (col / 100))) %>% 
+                      mutate(w = x0 - x1) %>% 
+                      select(x = x1, w)
+                  )
+                }))
+
+names(le_ghg_percent_bar)[names(le_ghg_percent_bar) != "region"] <- names(le_ghg_percent_bar)[names(le_ghg_percent_bar) != "region"] %>% 
+  stringr::str_sub(1, -6) %>% 
+  stringr::str_replace_all("_", "") %>% 
+  paste0("lePercentBar", .)
+```
+
+# Per capita latest emissions
+
+```{r}
+pc_total_rect <- ghg %>% 
+  group_by(region) %>% 
+  filter(year == max(year)) %>%
+  ungroup() %>% 
+  mutate(ghg_pc = 1000 * ghg_total / population_M) %>% # 1000 * Gt / million = tonnes / person
+  mutate(ghg_pc_text = case_when(
+    ghg_pc >= 10 ~ paste0(sprintf("%.1f", round(ghg_pc, 1))),
+    TRUE         ~ paste0(' ', sprintf("%.1f", round(ghg_pc, 1))))) 
+
+pc_total <- pc_total_rect %>% 
+  select(region, pcTextTotal = ghg_pc_text) %>% 
+  mutate(pcTextTotal = map(pcTextTotal, ~ tibble::tibble(text = .)))
+```
+
+```{r}
+pc_diff_bars_text <- pc_total_rect %>% 
+  select(region, ghg_pc) %>% 
+  mutate(ghg_pc = round(ghg_pc, 1)) %>% 
+  arrange(region != "Global") %>% 
+  mutate(diff = ghg_pc - ghg_pc[1]) %>%  
+  # mutate(x = round((ghg_pc) / max(ghg_pc), 3)) %>% 
+  mutate(x = round((ghg_pc) / 25, 3)) %>% mutate(x = pmin(x, 1)) %>% 
+  mutate(w = abs(x - x[1])) %>% 
+  mutate(x = if_else(x > x[1], x[1], x)) %>% 
+  mutate(x2 = x + w) %>% 
+  mutate(fill = if_else(sign(diff) == -1, "rgba(178,223,138,0.2)", "rgba(251,154,153,0.2)"))
+
+pc_bars <- bind_rows(
+  pc_diff_bars_text %>% 
+    filter(region == "Global") %>% 
+    mutate(x2   = x) %>% 
+    mutate(x    = 0,
+           fill = "rgba(178,223,138,0.2)"),
+  pc_diff_bars_text %>% 
+    filter(region == "Global") %>% 
+    mutate(x2   = 1,
+           fill = "rgba(251,154,153,0.2)"),
+  pc_diff_bars_text %>% 
+    filter(region != "Global")
+  ) %>% 
+    mutate(x  = scale_linear_x_pc_bars(x),
+           x2 = scale_linear_x_pc_bars(x2)) %>% 
+    mutate(w = x2 - x) %>% 
+    select(region, x, w, fill) %>% 
+    group_by(region) %>% 
+    nest(pcBars = c(x, w, fill)) %>% 
+    ungroup()
+
+# Use this value to update: settings.pcBarsTextX
+pc_bars$pcBars[[1]]
+```
+
+```{r}
+pc_bars_text <- bind_rows(
+  pc_diff_bars_text %>% 
+    filter(region == "Global") %>% 
+    mutate(text   = "below ",
+           anchor = "end",
+           fill   = "rgba(51,160,44)"),
+  pc_diff_bars_text %>% 
+    filter(region == "Global") %>% 
+    mutate(text   = " above average",
+           anchor = "start",
+           fill   = "rgba(227,26,28)"),
+  pc_diff_bars_text %>% 
+    mutate(text = case_when(
+      region == "Global" ~ "/", # paste0("below/above global average"),
+      sign(diff) == -1   ~ paste0(round(diff, 1), " "),
+      TRUE               ~ paste0(" +", round(diff, 1))
+    )) %>% 
+    mutate(anchor = case_when(
+      region == "Global" ~ "middle", # paste0("below/above global average"),
+      sign(diff) == -1   ~ "end",
+      TRUE               ~ "start"
+    )) %>% 
+    mutate(fill = case_when(
+      region == "Global" ~ "rgb(122,122,122)", # paste0("below/above global average"),
+      sign(diff) == -1   ~ "rgb(51,160,44)",
+      TRUE               ~ "rgb(227,26,28)"
+    ))
+) %>% 
+  select(region, text, anchor, fill) %>% 
+  group_by(region) %>% 
+  nest(pcBarsText = c("text", "anchor", "fill")) %>% 
+  ungroup() # %>% 
+  # mutate(pcBarsTextClass = if_else(region == "Global", "font-text", "font-number"))
+pc_bars_text$pcBarsText[[1]]
+```
+
+
+```{r}
+pc_line <- ghg %>% 
+  filter(year >= 1850) %>% 
+  # x before groupoing to all be on the same scale
+  mutate(x = year %/% 10) %>% 
+  mutate(x = x - min(x)) %>% 
+  mutate(x = x / max(x)) %>% 
+  group_by(region, x) %>% 
+  summarise(ghg_total    = mean(ghg_total), 
+            population_M = mean(population_M),
+            .groups      = "drop") %>% 
+  mutate(ghg_pc = 1000 * ghg_total / population_M) %>% 
+  group_by(region) %>% 
+  mutate(y = ghg_pc / max(ghg_pc)) %>%
+  select(region, x, y) %>% 
+  nest(pcLine = c(x, y)) %>% 
+  ungroup() %>%  
+  mutate(pcLine = map(pcLine, function(d_) {
+    d_ %>%
+      mutate(x = scale_linear_x_pc_line(x)) %>% 
+      mutate(y = scale_linear_y_pc_line(y))
+  }))
+```
+
+```{r}
+pc_line_dot <- pc_line %>% 
+  rename(pcLineDot = pcLine) %>% 
+  mutate(pcLineDot = map(pcLineDot, ~ tail(., 1)))
+```
+
+
+# Join final data
+
+```{r}
+dataGetGhg <- core %>% 
+  left_join(titles, by = "region") %>% 
+  left_join(hc_area, by = "region") %>% 
+  left_join(hc_text_total, by = "region") %>% 
+  left_join(hc_text_percent, by = "region") %>% 
+  left_join(hc_percent_bar, by = "region") %>% 
+  
+  left_join(hc_ghg_area, by = "region") %>% 
+  left_join(hc_ghg_text_total, by = "region") %>% 
+  left_join(hc_ghg_text_perc, by = "region") %>% 
+  left_join(hc_ghg_percent_bar, by = "region") %>% 
+  
+  left_join(le_text_total, by = "region") %>% 
+  left_join(le_text_percent, by = "region") %>% 
+  left_join(le_percent_bar, by = "region") %>% 
+  left_join(le_line, by = "region") %>% 
+  left_join(le_line_dot, by = "region") %>% 
+  
+  left_join(le_ghg_line, by = "region") %>% 
+  left_join(le_ghg_line_dot, by = "region") %>% 
+  left_join(le_ghg_text_total, by = "region") %>% 
+  left_join(le_ghg_text_perc, by = "region") %>% 
+  left_join(le_ghg_percent_bar, by = "region") %>% 
+
+  left_join(pc_total, by = "region") %>% 
+  left_join(pc_bars, by = "region") %>% 
+  left_join(pc_bars_text, by = "region") %>% 
+  left_join(pc_line, by = "region") %>% 
+  left_join(pc_line_dot, by = "region") 
+
+dataGetGhg$hcTextPercentch4total[[1]]
+
+dataGetGhg %>% 
+  write_json_data(name = "dataGetGhg", compact = TRUE)
+  # write_json_data(name = "dataGetGhg", compact = FALSE)
+```
+
+```{r}
+names(hc_ghg_text_perc) %>% stringr::str_sub(14, -1) %>% paste(collapse = "\n") %>% cat()
+```
+
+
+
+
